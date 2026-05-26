@@ -60,24 +60,27 @@ router.post('/', authMiddleware, async (req, res) => {
 
     const vendorIdFinal = vendor_id ?? req.userId;
     console.log('Using vendorId:', vendorIdFinal);
+    console.log('deliveryDays:', deliveryDays);
+    console.log('deliverySlot:', deliverySlot);
 
     const result = await db.query(
       `INSERT INTO customers
          (vendor_id, name, phone, address,
           milk_type, quantity_morning,
           quantity_evening, schedule_days,
-          status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active')
+          delivery_slot, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,'active')
        RETURNING *`,
       [
         vendorIdFinal,
         name,
         phone,
         address,
-        milkType   || 'Cow',
-        morningQty || 0,
-        eveningQty || 0,
+        milkType      || 'Cow',
+        morningQty    || 0,
+        eveningQty    || 0,
         JSON.stringify(deliveryDays || []),
+        deliverySlot  || 'Morning',
       ]
     );
 

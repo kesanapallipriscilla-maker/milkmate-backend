@@ -14,7 +14,8 @@ app.get('/', (req, res) => {
 });
 
 // ── Routes ────────────────────────────────────────────────────────────────────
-app.use('/auth', require('./routes/auth'));
+app.use('/auth',          require('./routes/auth'));
+app.use('/api/customers', require('./routes/customers'));
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 app.listen(PORT, '0.0.0.0', () => {

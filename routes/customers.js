@@ -37,23 +37,30 @@ router.get('/:vendorId', authMiddleware, async (req, res) => {
 // Creates a new customer. Accepts both camelCase (mobile) and snake_case keys.
 router.post('/', authMiddleware, async (req, res) => {
   try {
+    console.log('POST /api/customers - body:', JSON.stringify(req.body));
+    console.log('POST /api/customers - req.userId:', req.userId);
+
     const b = req.body;
 
     // Accept camelCase (from mobile) or snake_case
-    const vendorId       = b.vendor_id        ?? b.vendorId        ?? req.userId;
-    const name           = b.name?.trim();
-    const phone          = b.phone?.trim();
-    const address        = b.address?.trim()  ?? '';
-    const milkType       = b.milk_type        ?? b.milkType        ?? 'Cow';
-    const qtyMorning     = parseFloat(b.quantity_morning ?? b.morningQty  ?? 0);
-    const qtyEvening     = parseFloat(b.quantity_evening ?? b.eveningQty  ?? 0);
-    const scheduleDays   = b.schedule_days    ?? b.deliveryDays    ?? [];
+    const vendorId     = b.vendor_id        ?? b.vendorId        ?? req.userId;
+    const name         = b.name?.trim();
+    const phone        = b.phone?.trim();
+    const address      = b.address?.trim()  ?? '';
+    const milkType     = b.milk_type        ?? b.milkType        ?? 'Cow';
+    const qtyMorning   = parseFloat(b.quantity_morning ?? b.morningQty  ?? 0);
+    const qtyEvening   = parseFloat(b.quantity_evening ?? b.eveningQty  ?? 0);
+    const scheduleDays = b.schedule_days    ?? b.deliveryDays    ?? [];
+
+    console.log('POST /api/customers - parsed values:', { vendorId, name, phone, address, milkType, qtyMorning, qtyEvening, scheduleDays });
 
     // Validate required fields
-    if (!name)     return res.status(400).json({ success: false, message: 'Customer name is required.' });
-    if (!phone)    return res.status(400).json({ success: false, message: 'Phone number is required.' });
-    if (!address)  return res.status(400).json({ success: false, message: 'Delivery address is required.' });
-    if (!vendorId) return res.status(400).json({ success: false, message: 'Vendor ID is required.' });
+    if (!name)     { console.log('Validation failed: name missing');     return res.status(400).json({ success: false, message: 'Customer name is required.' }); }
+    if (!phone)    { console.log('Validation failed: phone missing');    return res.status(400).json({ success: false, message: 'Phone number is required.' }); }
+    if (!address)  { console.log('Validation failed: address missing');  return res.status(400).json({ success: false, message: 'Delivery address is required.' }); }
+    if (!vendorId) { console.log('Validation failed: vendorId missing'); return res.status(400).json({ success: false, message: 'Vendor ID is required.' }); }
+
+    console.log('POST /api/customers - running INSERT...');
 
     const result = await db.query(
       `INSERT INTO customers
@@ -70,9 +77,11 @@ router.post('/', authMiddleware, async (req, res) => {
       [vendorId, name, phone, address, milkType, qtyMorning, qtyEvening, scheduleDays]
     );
 
+    console.log('POST /api/customers - INSERT success, id:', result.rows[0].id);
     return res.status(201).json({ success: true, data: result.rows[0] });
   } catch (err) {
-    console.error('POST /api/customers', err.message);
+    console.error('POST /api/customers - ERROR:', err.message);
+    console.error('POST /api/customers - ERROR code:', err.code);
     if (err.code === '23505') {
       return res.status(409).json({
         success: false,

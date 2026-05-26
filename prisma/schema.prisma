@@ -1,0 +1,234 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  VENDOR
+  CUSTOMER
+}
+
+enum DeliveryStatus {
+  PENDING
+  DELIVERED
+  SKIPPED
+}
+
+enum PaymentMethod {
+  CASH
+  UPI
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAUSED
+  CANCELLED
+}
+
+model User {
+  id        String   @id @default(uuid())
+  firebaseUid String  @unique
+  phone     String   @unique
+  name      String
+  role      Role
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  vendor        Vendor?
+  customerLinks Customer[]
+  notifications Notification[]
+  fcmTokens     FcmToken[]
+  reviews       Review[]
+
+  @@map("users")
+}
+
+model Vendor {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  name        String
+  phone       String
+  description String?
+  location    String?
+  lat         Float?
+  lng         Float?
+  photo       String?
+  rating      Float    @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  products      MilkProduct[]
+  customers     Customer[]
+  reviews       Review[]
+  subscriptions Subscription[]
+
+  @@map("vendors")
+}
+
+model MilkProduct {
+  id             String  @id @default(uuid())
+  vendorId       String
+  type           String
+  pricePerLitre  Float
+  isActive       Boolean @default(true)
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@map("milk_products")
+}
+
+model Customer {
+  id        String  @id @default(uuid())
+  userId    String?
+  vendorId  String
+  name      String
+  phone     String
+  address   String?
+  schedule  Json?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  user     User?    @relation(fields: [userId], references: [id])
+  vendor   Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  deliverySchedule DeliverySchedule? @relation("deliverySchedule")
+  deliveries       Delivery[]
+  payments         Payment[]
+  bills            Bill[]
+  subscriptions    Subscription[]
+
+  @@map("customers")
+}
+
+model DeliverySchedule {
+  id             String   @id @default(uuid())
+  customerId     String   @unique
+  daysOfWeek     Int[]
+  quantityLitres Float
+  startDate      DateTime @default(now())
+
+  customer Customer @relation("deliverySchedule", fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@map("delivery_schedules")
+}
+
+model Delivery {
+  id         String         @id @default(uuid())
+  customerId String
+  date       DateTime       @db.Date
+  slot       String?
+  quantity   Float
+  status     DeliveryStatus @default(PENDING)
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, date])
+  @@map("deliveries")
+}
+
+model Payment {
+  id              String        @id @default(uuid())
+  customerId      String
+  amount          Float
+  mode            PaymentMethod
+  razorpayOrderId String?
+  reference       String?
+  status          PaymentStatus @default(PENDING)
+  date            DateTime?
+  createdAt       DateTime      @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@map("payments")
+}
+
+model Bill {
+  id               String   @id @default(uuid())
+  customerId       String
+  month            Int
+  year             Int
+  totalDeliveries  Int      @default(0)
+  totalAmount      Float    @default(0)
+  isPaid           Boolean  @default(false)
+  generatedAt      DateTime @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, month, year])
+  @@map("bills")
+}
+
+model Subscription {
+  id         String             @id @default(uuid())
+  customerId String
+  vendorId   String
+  status     SubscriptionStatus @default(ACTIVE)
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  vendor   Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+model Review {
+  id              String   @id @default(uuid())
+  customerId      String
+  vendorId        String
+  userId          String
+  stars           Int
+  milkQuality     Int?
+  freshness       Int?
+  punctuality     Int?
+  vendorBehaviour Int?
+  comment         String?
+  date            DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user     User   @relation(fields: [userId], references: [id])
+  vendor   Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, vendorId])
+  @@map("reviews")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String
+  body      String
+  type      String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model FcmToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  platform  String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("fcm_tokens")
+}

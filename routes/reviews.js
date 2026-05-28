@@ -3,19 +3,23 @@ const router         = express.Router();
 const db             = require('../config/db');
 const authMiddleware = require('../middleware/authMiddleware');
 
-// GET /api/reviews/:vendorId — all reviews for a vendor
-router.get('/:vendorId', async (req, res) => {
+// GET /api/reviews/:vendorId — all reviews for a vendor (no auth required)
+// Also supports: GET /api/reviews?vendor_id=X
+router.get('/:vendorId?', async (req, res) => {
   try {
-    const { vendorId } = req.params;
+    const vendorId = req.params.vendorId ?? req.query.vendor_id;
+    if (!vendorId) {
+      return res.status(400).json({ success: false, message: 'vendor_id is required.' });
+    }
     const result = await db.query(
       `SELECT
          r.id, r.vendor_id, r.customer_id,
          r.overall_stars, r.quality_stars, r.freshness_stars,
          r.punctuality_stars, r.behaviour_stars,
          r.comment, r.vendor_reply, r.created_at,
-         c.name AS "customerName"
+         c.name AS customer_name
        FROM reviews r
-       JOIN customers c ON c.id = r.customer_id
+       LEFT JOIN customers c ON c.id = r.customer_id
        WHERE r.vendor_id = $1
        ORDER BY r.created_at DESC`,
       [vendorId]
@@ -27,24 +31,38 @@ router.get('/:vendorId', async (req, res) => {
   }
 });
 
-// POST /api/reviews — submit a review
+// POST /api/reviews — submit a review (JWT required)
 router.post('/', authMiddleware, async (req, res) => {
   try {
     const {
-      vendor_id, customer_id,
-      overall_stars, quality_stars, freshness_stars,
-      punctuality_stars, behaviour_stars, comment,
+      vendor_id,
+      // Accept both naming conventions: route fields and frontend fields
+      overall_stars,     overall_rating,
+      quality_stars,     milk_quality,
+      freshness_stars,   freshness,
+      punctuality_stars, punctuality,
+      behaviour_stars,   vendor_behaviour,
+      comment,
     } = req.body;
 
-    if (!vendor_id || !customer_id || !overall_stars) {
-      return res.status(400).json({
-        success: false,
-        message: 'vendor_id, customer_id and overall_stars are required.',
-      });
+    if (!vendor_id) {
+      return res.status(400).json({ success: false, message: 'vendor_id is required.' });
     }
-    if (overall_stars < 1 || overall_stars > 5) {
+
+    const stars = {
+      overall:     overall_stars     ?? overall_rating    ?? 0,
+      quality:     quality_stars     ?? milk_quality      ?? 0,
+      freshness:   freshness_stars   ?? freshness         ?? 0,
+      punctuality: punctuality_stars ?? punctuality       ?? 0,
+      behaviour:   behaviour_stars   ?? vendor_behaviour  ?? 0,
+    };
+
+    if (stars.overall < 1 || stars.overall > 5) {
       return res.status(400).json({ success: false, message: 'overall_stars must be between 1 and 5.' });
     }
+
+    // Use customer_id from body if provided, otherwise fall back to JWT user id
+    const customer_id = req.body.customer_id ?? req.userId ?? null;
 
     const result = await db.query(
       `INSERT INTO reviews
@@ -60,16 +78,17 @@ router.post('/', authMiddleware, async (req, res) => {
            behaviour_stars   = EXCLUDED.behaviour_stars,
            comment           = EXCLUDED.comment
        RETURNING *`,
-      [vendor_id, customer_id, overall_stars,
-       quality_stars || null, freshness_stars || null,
-       punctuality_stars || null, behaviour_stars || null, comment || null]
+      [vendor_id, customer_id, stars.overall,
+       stars.quality || null, stars.freshness || null,
+       stars.punctuality || null, stars.behaviour || null,
+       comment?.trim() || null]
     );
 
     // Update vendor's average rating
     await db.query(
       `UPDATE vendors SET
-         rating       = (SELECT AVG(overall_stars) FROM reviews WHERE vendor_id = $1),
-         total_reviews = (SELECT COUNT(*)           FROM reviews WHERE vendor_id = $1)
+         rating        = (SELECT ROUND(AVG(overall_stars)::numeric, 1) FROM reviews WHERE vendor_id = $1),
+         total_reviews = (SELECT COUNT(*) FROM reviews WHERE vendor_id = $1)
        WHERE id = $1`,
       [vendor_id]
     );

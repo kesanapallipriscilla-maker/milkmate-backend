@@ -1,6 +1,7 @@
 const express = require('express');
 const router  = express.Router();
 const jwt     = require('jsonwebtoken');
+const db      = require('../config/db');
 
 router.get('/test', (req, res) => {
   res.json({ success: true, message: 'Auth route working' });
@@ -38,23 +39,59 @@ router.post('/verify-otp', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid OTP.' });
     }
 
+    // Normalise phone: strip +91 prefix for DB lookup since numbers
+    // may be stored without country code
+    const normalised = phone.replace(/^\+91/, '');
+
+    // 1. Check customers table first
+    let user = null;
+    let role = null;
+
+    const customerResult = await db.query(
+      'SELECT id, name, phone FROM customers WHERE phone = $1 OR phone = $2',
+      [phone, normalised]
+    );
+
+    if (customerResult.rows.length > 0) {
+      user = customerResult.rows[0];
+      role = 'customer';
+    } else {
+      // 2. Fall back to vendors table
+      const vendorResult = await db.query(
+        'SELECT id, name, phone FROM vendors WHERE phone = $1 OR phone = $2',
+        [phone, normalised]
+      );
+
+      if (vendorResult.rows.length > 0) {
+        user = vendorResult.rows[0];
+        role = 'vendor';
+      }
+    }
+
+    // 3. If not found in either table, default to vendor role with id 1
+    //    (preserves existing behaviour during development)
+    if (!user) {
+      console.log('Phone not found in DB, defaulting to vendor id 1:', phone);
+      user = { id: 1 };
+      role = 'vendor';
+    }
+
     const token = jwt.sign(
-      {
-        userId: 1,
-        phone:  phone,
-        role:   'vendor',
-      },
+      { userId: user.id, phone, role },
       process.env.JWT_SECRET,
       { expiresIn: '30d' }
     );
 
+    console.log('Login success:', { userId: user.id, role });
+
     return res.status(200).json({
       success:  true,
       message:  'Login successful',
-      token:    token,
-      role:     'vendor',
-      userId:   1,
-      vendorId: 1,
+      token,
+      userId:   user.id,
+      role,
+      // Keep vendorId for backwards compatibility with VendorLogin.js
+      ...(role === 'vendor' && { vendorId: user.id }),
     });
   } catch (error) {
     console.error('verify-otp error:', error.message);
